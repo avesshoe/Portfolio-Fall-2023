@@ -1,0 +1,127 @@
+---
+title: "Lab 04 - La Quinta is Spanish for next to Denny's, Pt. 1"
+author: "Insert your name here"
+date: "Insert date here"
+output: github_document
+---
+
+### Load packages and data
+
+```{r load-packages, message = FALSE}
+library(tidyverse) 
+library(readr)
+library(here) 
+library(dplyr)
+```
+
+# Reading in the data
+states.csv, dennys.csv, laquinta.csv
+```{r}
+getwd()
+states <- read.csv("data_raw/lab4/states.csv")
+dennys <- read.csv("data_raw/lab4/dennys.csv")
+laquinta <- read.csv("data_raw/lab4/laquinta.csv")
+```
+
+### Exercise 1
+
+```{r}
+print(nrow(dennys))
+print(ncol(dennys))
+```
+We see there are 1643 rows and 6 columns in the Dennys data frame. Each row represents an individual Denny's. The variables are address, city, state, zip, longitude, and latitude.
+
+
+### Exercise 2
+
+```{r}
+print(nrow(laquinta))
+print(ncol(laquinta))
+```
+There are 909 rows and 6 columns for the LaQuinta data frame. Each row represents a singular hotel and the variables are address, city, state, zip, longitude, and latitude.
+
+### Exercise 3
+Yes, there is at least one LaQuinta in Canada, Mexico, China, New Zeland, Turkey, UAE, Chile, Colombia, and Ecuador.There is not a Denny's location outside the US. 
+
+### Exercise 4
+A possible way to determine this would be to compare the states of each data frame to the states data. If there is an abbreviation (such as CH) it would not show up on the states data frame and therefore it is not a US state.
+
+### Exercise 5
+```{r}
+dennys %>%
+  filter(!(state %in% states$abbreviation))
+```
+There are 0 rows that show up when this code is run, which means there are not any states outside of the US.
+
+### Exercise 6
+
+```{r}
+dennys %>%
+  mutate(country = "United States")
+```
+This adds another column to the dennys data fram. It puts "United States" in each of the rows.
+
+### Exercise 7
+```{r}
+laquinta %>%
+  filter(!(state %in% states$abbreviation))
+```
+There are 14 La Quintas outside of the US. They are in Canada, Mexico, China, New Zealand, Turkey, UAE, Chile, Colombia, and Ecuador.
+
+### Exercise 8
+
+```{r}
+laquinta = laquinta %>%
+  mutate(country = case_when(
+    state %in% state.abb     ~ "United States",
+    state %in% c("ON", "BC") ~ "Canada",
+    state == ("ANT") ~ "Colombia",
+    state %in% c("AG" , "QR" , "CH", "NL" , "VE", "PU", "SL") ~ "Mexico",
+    state == "FM" ~ "Honduras"
+  ))
+```
+We now know the locations for all the La Quintas.
+
+```{r}
+laquinta <- laquinta %>%
+  filter(country == "United States")
+```
+
+There is an error that I cannot figure out here.
+
+Fixed
+
+### Exercise 9
+
+```{r}
+laquinta %>%
+  count(state) %>%
+  inner_join(states, by = c("state" = "abbreviation"))
+```
+Texas has the most La Quintas and Maine only has one. This is not surprising because Texas is a big state and La Quinta is more popular in the SouthWest US.
+
+```{r}
+dennys1 %>%
+  count(state) %>%
+  inner_join(states, by = c("state" = "abbreviation"))
+```
+California has the most Dennys'and Delaware has the least. 
+
+### Exercise 10
+
+```{r}
+dennys1 <- dennys %>%
+  mutate(establishment = "Denny's")
+laquinta <- laquinta %>%
+  mutate(establishment = "La Quinta")
+```
+
+```{r}
+combined <- bind_rows(dennys , laquinta)
+```
+```{r}
+ggplot(combined, mapping = aes(x = longitude, y = latitude, color = establishment)) +
+  geom_point()
+```
+
+

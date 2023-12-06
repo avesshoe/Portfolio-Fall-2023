@@ -1,0 +1,57 @@
+---
+title: "Asynch Sept 11"
+date: "2023-09-11"
+output: html_notebook
+---
+# packages
+```{r}
+library(tidyverse)
+library(here)
+library(janitor)
+library(nycflights13)
+```
+
+
+```{r}
+thisfile=here("data_raw", "DL_SelectFields.zip")
+
+df2022=read_csv(thisfile) %>% clean_names()
+```
+```{r}
+df9 = df2022|>
+  filter (passengers>0, origin == "LGA")
+```
+
+```{r}
+df9 |>
+  ggplot(aes(month)) + geom_bar(aes(weight=departures_performed))
+```
+
+```{r}
+df9 |> ggplot (aes(month)) + geom_bar(aes(weight=passengers))
+```
+Observation: Low flight numbers in January, Feb, March possibly due to covid.
+
+```{r}
+df9 |> ggplot(aes(month,fill=carrier_name)) + geom_bar(aes(weight=departures_performed))
+```
+```{r}
+df10=df2022 |> filter(passengers>0, origin=="LGA" | dest=="LGA")
+
+df10 |> ggplot(aes(month)) +geom_bar(aes(weight=passengers))
+```
+
+```{r}
+df11=df10 |> select(month,passengers,seats,carrier_name,dest,origin)
+```
+```{r}
+df12=df10 |> select(1:5, month, contains("id"))
+```
+
+```{r}
+df13=df11 |> mutate(percent_loading = passengers/seats*100)
+
+df13 |> ggplot(aes(percent_loading)) +
+  geom_histogram() + facet_wrap(~carrier_name, scales = "free_y")
+```
+
