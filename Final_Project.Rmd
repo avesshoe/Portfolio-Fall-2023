@@ -1,0 +1,207 @@
+---
+title: "Final Project"
+output: html_notebook
+---
+
+## Packages
+
+```{r}
+library(plyr)
+library(tidyverse)
+library(here)
+library(geojsonR)
+library(janitor)
+library(knitr)
+library(lubridate) 
+library(mapview)
+library(gbfs)
+library(sf) 
+library(tmap)
+library(tidycensus)
+library(dplyr)
+library(conflicted)
+library(plotly)
+conflicts_prefer(here::here)
+conflicts_prefer(dplyr::rename)
+conflicts_prefer(dplyr::filter)
+conflicts_prefer(dplyr::mutate)
+
+```
+
+## Reading the files.
+
+Metro Station Entrances to map the location of metro, boarding data to show how many people are using the metro station, and bikeshare to show the number of people riding bikes.
+
+All data is from the month September because there are no major holidays, the weather is still decent enough for people to ride bikes, and the number of tourists/ pleasure bike riders are reduced.
+
+For the purpose of this project, we plan on focusing on the commuters, and plan on creating more bike locations to better suit the number of commuters.
+
+```{r}
+metro <- FROM_GeoJson(here('data_raw', 'Metro_Station_Entrances_in_DC.geojson'))
+metroRiders <- read.csv(here( 'Boardings by Route Table_Full Data_data.csv'))
+metroLoc <- read.csv(here('data_raw', 'Metro_Stations_Regional.csv')) 
+
+sept_raw <- read_csv(here( '202309-capitalbikeshare-tripdata.csv'))
+
+neigh = st_read(here("data_raw", "DC_Health_Planning_Neighborhoods.geojson")) %>% clean_names()
+
+```
+
+## Cleaning Data
+
+This filters the data so we are only getting entries for the weekdays and not the weekends, appending location variables to station names, and combining repeat stations with a summed amount of entries.
+
+```{r}
+#metroLoc = metroLoc |> 
+  #rename("X" = "ï..X")
+
+metroAddy <- subset(metroLoc, select = c(NAME, ADDRESS, X, Y))|>
+  rename("Station" = "NAME", "Lon" = "X", "Lat" = "Y")
+
+metroRiders$Time.Period = NULL
+metroRiders$Day.of.Week = NULL
+metroRiders$Holiday = NULL
+metroRiders$Month = NULL
+metroRiders$Year = NULL
+metroRiders$Avg.Daily.Entries.Rounded = NULL
+
+#metroRiders = metroRiders |>
+ #rename("Station" = "ï..Station")
+
+metroR1 <- metroRiders |>
+  filter(Servicetype == "Weekday") |>
+  ddply("Station", numcolwise(sum))
+
+METRO <- merge(x = metroR1, y = metroAddy, by = "Station")
+
+glimpse(METRO)
+
+```
+
+## Cleaning bike data
+
+bikeR1 is the data set originated from September Bikeshare data. It is filtered to keep the columns "started at", "start lat" and "start_lng". Na.omit gets rid of everything null, and mutate adds the date to when each bike ride started.
+
+bikeR2 is a further filtering of bikeR1 where coordinates are added so we can map out the bike riders starting location.
+
+bikeR3 is the new data set where bikeR2 and neigh are joined. 
+
+```{r}
+bikeR1 = sept_raw %>% select(started_at, start_lat, start_lng) %>% na.omit() %>% mutate(start_date=as.Date(started_at)) %>% select(start_date, start_lat, start_lng)
+
+bikeR2 = bikeR1 %>% st_as_sf(coords=c("start_lng", "start_lat"), crs=4326)
+
+st_crs(neigh$geometry[1])
+
+bikeR3 = bikeR2 %>% st_join(neigh)
+
+
+ 
+#code for possible future mapping 
+#df1_s_sf = df1_s %>% st_as_sf(coords =c("start_lng", "start_lat"), crs = 4326)
+```
+
+
+## Metro Map
+
+The first part of this code chunk is converting the metro data frame into a spatial data frame. 
+
+MetroMap2 is a filtration of MetroMap that joins the data set "neigh" and omits any null values. Then a variable 'code' is added to the numcolwise. There are 50 'codes' created in this process. Then from those codes, we will determine rideship for both bikes and metro.
+
+```{r}
+MetroMap <- st_as_sf(METRO, coords = c("Lon", "Lat"), crs =4326)
+
+MetroMap2 <- MetroMap %>%
+  st_join(neigh) %>% na.omit() %>%
+  ddply("code", numcolwise(sum))
+```
+
+
+## More Filtering
+
+neigh1 is the new data frame of "neigh" where code and geometry are the chosen variables to be kept.
+
+bike R4 is a further filtration of bikeR3, where start date, code, geometry is kept and geometry column is dropped.
+
+bikeR5 is another filter of neigh1, where bikeR4 is added (joined). Additionally, each of the weekend dates are removed from the data set as we chose to only look at weekday data.
+
+```{r}
+
+neigh1 = neigh %>% select(code, geometry)
+
+bikeR4 = bikeR3 %>% select(start_date, code, geometry) %>% st_drop_geometry()
+
+bikeR5 = neigh1 %>% full_join(bikeR4) %>% filter(start_date != as.Date('2023-09-02')) %>% filter(start_date != as.Date('2023-09-03')) %>% filter(start_date != as.Date('2023-09-09')) %>% filter(start_date != as.Date('2023-09-10')) %>% filter(start_date != as.Date('2023-09-16')) %>% filter(start_date != as.Date('2023-09-17')) %>% filter(start_date != as.Date('2023-09-23')) %>% filter(start_date != as.Date('2023-09-24')) %>% filter(start_date != as.Date('2023-09-30'))
+```
+## And More!
+
+bikeR6 is a nre data frame where we took the bike data from set bikeR5. bikeR6 has 51 codes and they are listed as observations. All null values are ommitted.
+
+bikeR7 takes the data from bikeR6 and keeps the code as well as frequency and renames it to bike_freq. 
+
+```{r}
+#plot(neigh)
+
+bikeR6 = data.frame(table(bikeR5$code)) %>% rename(code=Var1) %>% full_join(bikeR5) %>% select(code, Freq, geometry) %>% distinct() %>% na.omit()
+
+bikeR7 = bikeR6 %>% select (code, Freq) %>% rename(bike_freq = Freq)
+
+MetroMap3 = MetroMap2 %>% select(Entries, code) %>% rename(metro_freq = Entries)
+
+metro_bike_df = bikeR7 %>% full_join(MetroMap3) %>% mutate(metro_freq = replace_na(metro_freq, 0))
+
+#bikeR7 = bikeR5 %>% count(code, start_date)
+
+#plot(bikeR6)
+```
+## Last One!
+
+bikeR8 takes bikeR6 and keeps the code and frequency. It also creates a column called bike because all the data in this set is from bike riders. We will use this column later when we make our visual. 
+
+MetroMap4 continues the filtration of MetroMap2 where entries (later renamed to freq) and code are kept. Every data in this set is given the variable 'metro' as they represent a metro rider.
+
+```{r}
+bikeR8 = bikeR6 %>% select (code, Freq) %>% rename(freq = Freq) %>% mutate(transport = 'bike')
+
+MetroMap4 = MetroMap2 %>% select(Entries, code) %>% rename(freq = Entries) %>% mutate(transport = 'metro')
+
+code = c("N1", "N10", "N11", "N14", "N15", "N16", "N2", "N20", "N21", "N22", "N26", "N27", "N28", "N3", "N32", "N33", "N34", "N36", "N37", "N4", "N40", "N41", "N45", "N46", "N47", "N49", "N5", "N50", "N51", "N6", "N8")
+
+freq = c(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+
+transport = c('metro', 'metro', 'metro', 'metro', 'metro', 'metro', 'metro', 'metro', 'metro', 'metro', 'metro', 'metro', 'metro', 'metro', 'metro', 'metro', 'metro', 'metro', 'metro', 'metro', 'metro', 'metro', 'metro', 'metro', 'metro', 'metro', 'metro', 'metro', 'metro', 'metro', 'metro')
+
+metroExtra = data.frame(code, freq, transport)
+
+MetroMap4 = MetroMap4 %>% rbind(metroExtra)
+
+metro_bike_df2 = bikeR8 %>% full_join(MetroMap4)
+
+```
+
+
+## Mapping Metro
+
+This is a simple visual of the metro station locations in DC.
+
+```{r}
+entrances=st_read(here("Metro_Station_Entrances_in_DC.geojson")) %>% clean_names()
+
+class(entrances)
+
+plot(entrances)
+```
+
+## Mapping Bike Data
+
+We create a gg plot of the data from above. The combined data set of metro and bike riders (metro_bike_df2). We wanted to visualize the number of people who are riding the metro vs using bikes in each of the 'codes'. 
+
+```{r}
+charts <- ggplot(metro_bike_df2, aes(fill=transport, y=freq, x=code)) + geom_bar(position='dodge', stat='identity')
+
+ggplotly(charts)
+```
+
+## Recommednation
+
+Based on the data comparisons of metro entries and bike entries, we would recommend that the bikeshare group look into increasing the amount of bike stations in neighborhoods: n1, n2, n3, n4, n6, n8, n10, n11, n14, n15, n16, n20, n21, n22, n26, n27, n28, n32, n33, n34, n36, n37, n40, n41, n45, n46, n47, n49, n50, n51.
